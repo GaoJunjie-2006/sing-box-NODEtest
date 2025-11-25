@@ -419,7 +419,7 @@ def main():
                    for i, node in enumerate(nodes)}
         
         completed = 0
-        for future in as_completed(futures):
+        for future in as_completed(futures, timeout=TIMEOUT*total_nodes+60):
             completed += 1
             node_url, speed = future.result()
             if speed is not None and speed >= SPEED_THRESHOLD:
