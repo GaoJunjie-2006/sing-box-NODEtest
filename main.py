@@ -8,7 +8,7 @@ import runpy
 import time
 
 scripts = ['real-ping-test.py', 'speed-test.py', 'git-push.py']
-pauses = [10, 10, 600*12]
+pauses = [10, 10, 3600*6]
 
 iteration = 0
 
