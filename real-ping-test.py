@@ -104,7 +104,6 @@ def parse_vmess(url: str) -> Optional[dict]:
             "alter_id": int(data.get('aid', 0))
         }
         
-        # 添加传输层配置（TCP 不需要配置）
         net = data.get('net', 'tcp')
         if net == 'ws':
             config['transport'] = {
@@ -115,7 +114,6 @@ def parse_vmess(url: str) -> Optional[dict]:
         elif net == 'grpc':
             config['transport'] = {"type": "grpc"}
         
-        # TLS 配置
         if data.get('tls') == 'tls':
             config['tls'] = {
                 "enabled": True,
@@ -139,12 +137,10 @@ def parse_vless(url: str) -> Optional[dict]:
             "uuid": parsed.username
         }
         
-        # Flow 配置
         flow = params.get('flow', [''])[0]
         if flow:
             config['flow'] = flow
         
-        # TLS 配置
         security = params.get('security', [''])[0]
         if security == 'tls':
             config['tls'] = {
@@ -152,7 +148,6 @@ def parse_vless(url: str) -> Optional[dict]:
                 "server_name": params.get('sni', [parsed.hostname])[0]
             }
         
-        # 传输层配置（TCP 不需要配置）
         transport_type = params.get('type', ['tcp'])[0]
         if transport_type == 'ws':
             config['transport'] = {
@@ -196,7 +191,6 @@ def parse_trojan(url: str) -> Optional[dict]:
             "password": parsed.username
         }
         
-        # TLS 配置
         security = params.get('security', ['tls'])[0]
         if security == 'tls':
             config['tls'] = {
@@ -204,7 +198,6 @@ def parse_trojan(url: str) -> Optional[dict]:
                 "server_name": params.get('sni', [parsed.hostname])[0]
             }
         
-        # 传输层配置
         transport_type = params.get('type', ['tcp'])[0]
         if transport_type == 'ws':
             config['transport'] = {
@@ -237,22 +230,11 @@ def convert_share_url_to_outbound(node_url: str) -> Optional[dict]:
 
 
 def create_sing_box_config(node_url: str, port: int) -> Optional[dict]:
-    """
-    为节点创建 sing-box 配置
-    
-    Args:
-        node_url: 节点 URL
-        port: 本地监听端口
-        
-    Returns:
-        sing-box 配置字典
-    """
-    # 转换节点 URL 为 outbound
+    """为节点创建 sing-box 配置"""
     outbound = convert_share_url_to_outbound(node_url)
     if not outbound:
         return None
     
-    # 设置 tag
     outbound['tag'] = 'proxy'
     
     config = {
@@ -281,71 +263,57 @@ def create_sing_box_config(node_url: str, port: int) -> Optional[dict]:
 
 
 def test_node_latency(node_url: str, index: int) -> Tuple[str, Optional[float]]:
-    """
-    测试单个节点的真连接延迟
-    
-    Args:
-        node_url: 节点 URL
-        index: 节点索引
-        
-    Returns:
-        (节点URL, 延迟毫秒) 元组，失败返回 None
-    """
-    port = BASE_PORT + index
+    """测试单个节点的真连接延迟"""
     temp_config = None
     process = None
     
     try:
-        # 创建 sing-box 配置
-        config = create_sing_box_config(node_url, port)
+        config = create_sing_box_config(node_url, BASE_PORT + index)
         if not config:
             protocol = node_url.split('://')[0].lower() if '://' in node_url else 'unknown'
             print(f"[SKIP] 节点 {index + 1}: 不支持的协议 ({protocol})")
             return (node_url, None)
         
-        # 创建临时配置文件
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, encoding='utf-8') as f:
-            json.dump(config, f, indent=2)
-            temp_config = f.name
-        
-        # 启动 sing-box
-        if DEBUG_MODE:
-            process = subprocess.Popen(
-                [SING_BOX_PATH, 'run', '-c', temp_config],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                preexec_fn=os.setsid if os.name != 'nt' else None
-            )
-        else:
-            process = subprocess.Popen(
-                [SING_BOX_PATH, 'run', '-c', temp_config],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                preexec_fn=os.setsid if os.name != 'nt' else None
-            )
-        
-        # 等待 sing-box 启动
-        time.sleep(STARTUP_WAIT)
-        
-        # 检查进程是否还在运行
-        for retry in range(3):
+        # 尝试多个端口
+        for port_offset in range(10):
+            port = BASE_PORT + index + port_offset * 1000
+            config['inbounds'][0]['listen_port'] = port
+            
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, encoding='utf-8') as f:
+                json.dump(config, f, indent=2)
+                temp_config = f.name
+            
+            if DEBUG_MODE:
+                process = subprocess.Popen(
+                    [SING_BOX_PATH, 'run', '-c', temp_config],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    preexec_fn=os.setsid if os.name != 'nt' else None
+                )
+            else:
+                process = subprocess.Popen(
+                    [SING_BOX_PATH, 'run', '-c', temp_config],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    preexec_fn=os.setsid if os.name != 'nt' else None
+                )
+            
+            time.sleep(STARTUP_WAIT)
+            
             if process.poll() is None:
                 break
-            if retry < 2:
-                time.sleep(0.3)
-        
-        if process.poll() is not None:
-            stdout, stderr = process.communicate()
-            print(f"[FAIL] 节点 {index + 1}: sing-box 启动失败")
-            if stderr:
-                print(f"  错误: {stderr.decode()[:500]}")
+            else:
+                if os.path.exists(temp_config):
+                    os.unlink(temp_config)
+                time.sleep(0.1)
+        else:
+            print(f"[FAIL] 节点 {index + 1}: 无可用端口")
             return (node_url, None)
         
         # 测试连接延迟
         start_time = time.time()
         
         try:
-            # 使用 curl 通过代理测试
             result = subprocess.run(
                 ['curl', '-x', f'http://127.0.0.1:{port}', 
                  '-m', str(TIMEOUT), '-s', '-o', '/dev/null', '-w', '%{http_code}', 
@@ -372,7 +340,6 @@ def test_node_latency(node_url: str, index: int) -> Tuple[str, Optional[float]]:
         return (node_url, None)
         
     finally:
-        # 终止 sing-box 进程
         if process and process.poll() is None:
             try:
                 if os.name != 'nt':
@@ -389,25 +356,17 @@ def test_node_latency(node_url: str, index: int) -> Tuple[str, Optional[float]]:
                 except:
                     pass
         
-        # 清理临时文件
         if temp_config and os.path.exists(temp_config):
             try:
                 os.unlink(temp_config)
             except:
                 pass
         
-        # 等待端口释放
         time.sleep(0.2)
 
 
 def save_nodes(nodes: List[str], file_path: str):
-    """
-    保存节点到文件（base64 编码）
-    
-    Args:
-        nodes: 节点 URL 列表
-        file_path: 输出文件路径
-    """
+    """保存节点到文件（base64 编码）"""
     try:
         content = '\n'.join(nodes)
         encoded = base64.b64encode(content.encode('utf-8')).decode('utf-8')
@@ -434,7 +393,6 @@ def main():
     print(f"  - 输出文件: {OUTPUT_FILE}")
     print("=" * 60)
     
-    # 检查 sing-box 是否可用
     try:
         result = subprocess.run([SING_BOX_PATH, 'version'], 
                               capture_output=True, timeout=5)
@@ -443,14 +401,12 @@ def main():
     except:
         print(f"\n[WARNING] 无法执行 sing-box，请确保已安装")
     
-    # 读取节点
     print(f"\n[1/3] 读取节点文件...")
     nodes = decode_base64_nodes(INPUT_FILE)
     if not nodes:
         print("[ERROR] 没有可用节点")
         return
     
-    # 测试节点
     print(f"\n[2/3] 开始测试节点延迟...")
     print(f"总共 {len(nodes)} 个节点，使用 {MAX_WORKERS} 个并发\n")
     
@@ -465,11 +421,9 @@ def main():
             if latency is not None and latency < LATENCY_THRESHOLD:
                 valid_nodes.append((node_url, latency))
     
-    # 按延迟排序（如果需要）
     if not KEEP_ORIGINAL_ORDER:
         valid_nodes.sort(key=lambda x: x[1])
     
-    # 保存结果
     print(f"\n[3/3] 保存测试结果...")
     print(f"\n测试完成！")
     print(f"  - 总节点数: {len(nodes)}")
@@ -479,13 +433,11 @@ def main():
     if valid_nodes:
         print(f"\n延迟最低的 5 个节点:")
         for i, (node, latency) in enumerate(valid_nodes[:5], 1):
-            # 提取节点名称
             name = "未知"
             if '#' in node:
                 name = node.split('#')[-1]
             print(f"  {i}. {name}: {latency:.0f}ms")
         
-        # 保存节点
         save_nodes([node for node, _ in valid_nodes], OUTPUT_FILE)
     else:
         print(f"\n[WARNING] 没有找到延迟低于 {LATENCY_THRESHOLD}ms 的节点")

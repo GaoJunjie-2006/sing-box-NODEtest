@@ -19,7 +19,7 @@ from typing import List, Tuple, Optional
 # ==================== 配置参数区域 ====================
 
 # 下载速度阈值（KB/s），低于此值的节点将被过滤
-SPEED_THRESHOLD = 500  # 500KB/s
+SPEED_THRESHOLD = 500
 
 # 测试下载地址（支持多个，会随机选择）
 TEST_URLS = [
@@ -48,10 +48,10 @@ BASE_PORT = 30000
 STARTUP_WAIT = 1
 
 # 速度超过此值（KB/s）就停止下载，按此值计算（节省流量）
-SPEED_CAP = 1024  # 1MB/s
+SPEED_CAP = 1024
 
 # 单次下载最大字节数（防止流量过多）
-MAX_DOWNLOAD_SIZE = 10 * 1024 * 1024  # 10MB
+MAX_DOWNLOAD_SIZE = 10 * 1024 * 1024
 
 # 是否按速度排序输出（True 则从快到慢）
 SORT_BY_SPEED = True
@@ -270,52 +270,53 @@ def create_sing_box_config(node_url: str, port: int) -> Optional[dict]:
 
 
 def test_node_speed(node_url: str, index: int) -> Tuple[str, Optional[float]]:
-    """
-    测试单个节点的下载速度
-    
-    Args:
-        node_url: 节点 URL
-        index: 节点索引
-        
-    Returns:
-        (节点URL, 速度KB/s) 元组，失败返回 None
-    """
-    port = BASE_PORT + index
+    """测试单个节点的下载速度"""
     temp_config = None
     process = None
     
     try:
-        config = create_sing_box_config(node_url, port)
+        config = create_sing_box_config(node_url, BASE_PORT + index)
         if not config:
             protocol = node_url.split('://')[0].lower() if '://' in node_url else 'unknown'
             if DEBUG_MODE:
                 print(f"[SKIP] 节点 {index + 1}: 不支持的协议 ({protocol})")
             return (node_url, None)
         
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, encoding='utf-8') as f:
-            json.dump(config, f, indent=2)
-            temp_config = f.name
-        
-        if DEBUG_MODE:
-            process = subprocess.Popen(
-                [SING_BOX_PATH, 'run', '-c', temp_config],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                preexec_fn=os.setsid if os.name != 'nt' else None
-            )
-        else:
-            process = subprocess.Popen(
-                [SING_BOX_PATH, 'run', '-c', temp_config],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                preexec_fn=os.setsid if os.name != 'nt' else None
-            )
-        
-        time.sleep(STARTUP_WAIT)
-        
-        if process.poll() is not None:
+        # 尝试多个端口
+        for port_offset in range(10):
+            port = BASE_PORT + index + port_offset * 1000
+            config['inbounds'][0]['listen_port'] = port
+            
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, encoding='utf-8') as f:
+                json.dump(config, f, indent=2)
+                temp_config = f.name
+            
             if DEBUG_MODE:
-                print(f"[FAIL] 节点 {index + 1}: sing-box 启动失败")
+                process = subprocess.Popen(
+                    [SING_BOX_PATH, 'run', '-c', temp_config],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    preexec_fn=os.setsid if os.name != 'nt' else None
+                )
+            else:
+                process = subprocess.Popen(
+                    [SING_BOX_PATH, 'run', '-c', temp_config],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    preexec_fn=os.setsid if os.name != 'nt' else None
+                )
+            
+            time.sleep(STARTUP_WAIT)
+            
+            if process.poll() is None:
+                break
+            else:
+                if os.path.exists(temp_config):
+                    os.unlink(temp_config)
+                time.sleep(0.1)
+        else:
+            if DEBUG_MODE:
+                print(f"[FAIL] 节点 {index + 1}: 无可用端口")
             return (node_url, None)
         
         # 测试下载速度
@@ -371,7 +372,7 @@ def test_node_speed(node_url: str, index: int) -> Tuple[str, Optional[float]]:
         return (node_url, None)
     
     finally:
-        if process:
+        if process and process.poll() is None:
             try:
                 if os.name != 'nt':
                     os.killpg(os.getpgid(process.pid), signal.SIGTERM)
@@ -389,6 +390,8 @@ def test_node_speed(node_url: str, index: int) -> Tuple[str, Optional[float]]:
                 os.remove(temp_config)
             except:
                 pass
+        
+        time.sleep(0.1)
 
 
 def main():
@@ -404,7 +407,6 @@ def main():
         print("[ERROR] 没有可用的节点")
         return
     
-    # 应用节点数量限制
     if MAX_NODES > 0 and len(nodes) > MAX_NODES:
         nodes = nodes[:MAX_NODES]
         print(f"[INFO] 限制测试数量: {len(nodes)} 个节点")
@@ -424,16 +426,13 @@ def main():
                 results.append((node_url, speed))
             print(f"[PROGRESS] {completed}/{total_nodes}")
     
-    # 排序结果
     if SORT_BY_SPEED:
         results.sort(key=lambda x: x[1], reverse=True)
     
-    # 应用输出限制
     output_results = results
     if MAX_OUTPUT_NODES > 0 and len(results) > MAX_OUTPUT_NODES:
         output_results = results[:MAX_OUTPUT_NODES]
     
-    # 保存结果
     with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
         for node_url, speed in output_results:
             f.write(f"{node_url}\n")
