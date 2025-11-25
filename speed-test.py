@@ -51,7 +51,7 @@ STARTUP_WAIT = 1
 SPEED_CAP = 1024
 
 # 单次下载最大字节数（防止流量过多）
-MAX_DOWNLOAD_SIZE = 10 * 1024 * 1024
+MAX_DOWNLOAD_SIZE = 2 * 1024 * 1024
 
 # 是否按速度排序输出（True 则从快到慢）
 SORT_BY_SPEED = True
