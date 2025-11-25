@@ -19,7 +19,7 @@ from typing import List, Tuple, Optional
 # ==================== 配置参数区域 ====================
 
 # 延迟阈值（毫秒），低于此值的节点将被保留
-LATENCY_THRESHOLD = 1200
+LATENCY_THRESHOLD = 1800
 
 # 测试地址（用于测试真连接延迟）
 TEST_URL = "http://www.gstatic.com/generate_204"
