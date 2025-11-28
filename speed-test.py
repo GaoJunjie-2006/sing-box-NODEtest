@@ -30,7 +30,7 @@ TEST_URLS = [
 TIMEOUT = 5
 
 # 并发测试数量
-MAX_WORKERS = 5
+MAX_WORKERS = 1
 
 # sing-box 可执行文件路径
 SING_BOX_PATH = "sing-box"
