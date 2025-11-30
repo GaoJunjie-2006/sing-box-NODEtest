@@ -299,10 +299,30 @@ def extract_country_from_node(node_url: str) -> str:
 
 
 def rename_node(node_url: str, speed_kbs: float) -> str:
-    """重命名节点为 GJJnodes-国家-速度 格式"""
+    """重命名节点备注为 GJJnodes-国家-速度 格式"""
     country = extract_country_from_node(node_url)
     speed_m = speed_kbs / 1024
-    return f"vmess://GJJnodes-{country}-{speed_m:.1f}m"
+    new_name = f"GJJnodes-{country}-{speed_m:.1f}m"
+    
+    try:
+        if node_url.startswith('vmess://'):
+            data = json.loads(base64.b64decode(node_url.split('://')[1]).decode())
+            data['ps'] = new_name
+            encoded = base64.b64encode(json.dumps(data).encode()).decode()
+            return f"vmess://{encoded}"
+        elif node_url.startswith('vless://'):
+            parsed = urllib.parse.urlparse(node_url)
+            return f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{parsed.query}#{new_name}"
+        elif node_url.startswith('ss://'):
+            parsed = urllib.parse.urlparse(node_url)
+            return f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{parsed.query}#{new_name}"
+        elif node_url.startswith('trojan://'):
+            parsed = urllib.parse.urlparse(node_url)
+            return f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{parsed.query}#{new_name}"
+    except:
+        pass
+    
+    return node_url
 
 
 def test_node_speed(node_url: str, index: int) -> Tuple[str, Optional[float]]:
