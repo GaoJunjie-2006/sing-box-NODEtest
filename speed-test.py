@@ -19,7 +19,7 @@ from typing import List, Tuple, Optional
 # ==================== 配置参数区域 ====================
 
 # 下载速度阈值（KB/s），低于此值的节点将被过滤
-SPEED_THRESHOLD = 250
+SPEED_THRESHOLD = 100
 
 # 测试下载地址（支持多个，会随机选择）
 TEST_URLS = [
@@ -27,10 +27,10 @@ TEST_URLS = [
 ]
 
 # 单个节点最大测试时间（秒）
-TIMEOUT = 5
+TIMEOUT = 20
 
 # 并发测试数量
-MAX_WORKERS = 1
+MAX_WORKERS = 100
 
 # sing-box 可执行文件路径
 SING_BOX_PATH = "sing-box"
@@ -269,6 +269,42 @@ def create_sing_box_config(node_url: str, port: int) -> Optional[dict]:
     return config
 
 
+def extract_country_from_node(node_url: str) -> str:
+    """从节点 URL 中提取国家信息"""
+    try:
+        if node_url.startswith('vmess://'):
+            data = json.loads(base64.b64decode(node_url.split('://')[1]).decode())
+            ps = data.get('ps', '')
+        elif node_url.startswith('vless://'):
+            parsed = urllib.parse.urlparse(node_url)
+            fragment = urllib.parse.unquote(parsed.fragment)
+            ps = fragment
+        elif node_url.startswith('ss://'):
+            parsed = urllib.parse.urlparse(node_url)
+            fragment = urllib.parse.unquote(parsed.fragment)
+            ps = fragment
+        elif node_url.startswith('trojan://'):
+            parsed = urllib.parse.urlparse(node_url)
+            fragment = urllib.parse.unquote(parsed.fragment)
+            ps = fragment
+        else:
+            ps = ''
+        
+        if ps:
+            parts = ps.split('-')
+            return parts[0].strip()
+        return 'Unknown'
+    except:
+        return 'Unknown'
+
+
+def rename_node(node_url: str, speed_kbs: float) -> str:
+    """重命名节点为 GJJnodes-国家-速度 格式"""
+    country = extract_country_from_node(node_url)
+    speed_m = speed_kbs / 1024
+    return f"vmess://GJJnodes-{country}-{speed_m:.1f}m"
+
+
 def test_node_speed(node_url: str, index: int) -> Tuple[str, Optional[float]]:
     """测试单个节点的下载速度"""
     temp_config = None
@@ -334,12 +370,15 @@ def test_node_speed(node_url: str, index: int) -> Tuple[str, Optional[float]]:
             response = opener.open(test_url, timeout=TIMEOUT)
             
             while True:
+                elapsed = time.time() - start_time
+                if elapsed > TIMEOUT:
+                    break
+                    
                 chunk = response.read(8192)
                 if not chunk:
                     break
                     
                 downloaded += len(chunk)
-                elapsed = time.time() - start_time
                 
                 if elapsed > 0:
                     current_speed = downloaded / elapsed / 1024
@@ -433,15 +472,19 @@ def main():
     if MAX_OUTPUT_NODES > 0 and len(results) > MAX_OUTPUT_NODES:
         output_results = results[:MAX_OUTPUT_NODES]
     
-    with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
-        for node_url, speed in output_results:
-            f.write(f"{node_url}\n")
-    
     print()
     print(f"[SUCCESS] 测试完成！")
     print(f"[INFO] 满足条件的节点: {len(results)}/{total_nodes}")
     print(f"[INFO] 输出节点数: {len(output_results)}")
-    print(f"[INFO] 结果已保存到: {OUTPUT_FILE}")
+    
+    if len(results) < 4:
+        print(f"[WARNING] 满足条件的节点少于4个，不更新 {OUTPUT_FILE}")
+    else:
+        with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
+            for node_url, speed in output_results:
+                renamed_node = rename_node(node_url, speed)
+                f.write(f"{renamed_node}\n")
+        print(f"[INFO] 结果已保存到: {OUTPUT_FILE}")
     
     if output_results:
         print(f"\n[TOP 5 最快节点]")
