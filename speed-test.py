@@ -269,60 +269,7 @@ def create_sing_box_config(node_url: str, port: int) -> Optional[dict]:
     return config
 
 
-def extract_country_from_node(node_url: str) -> str:
-    """从节点 URL 中提取国家信息"""
-    try:
-        if node_url.startswith('vmess://'):
-            data = json.loads(base64.b64decode(node_url.split('://')[1]).decode())
-            ps = data.get('ps', '')
-        elif node_url.startswith('vless://'):
-            parsed = urllib.parse.urlparse(node_url)
-            fragment = urllib.parse.unquote(parsed.fragment)
-            ps = fragment
-        elif node_url.startswith('ss://'):
-            parsed = urllib.parse.urlparse(node_url)
-            fragment = urllib.parse.unquote(parsed.fragment)
-            ps = fragment
-        elif node_url.startswith('trojan://'):
-            parsed = urllib.parse.urlparse(node_url)
-            fragment = urllib.parse.unquote(parsed.fragment)
-            ps = fragment
-        else:
-            ps = ''
-        
-        if ps:
-            parts = ps.split('-')
-            return parts[0].strip()
-        return 'Unknown'
-    except:
-        return 'Unknown'
 
-
-def rename_node(node_url: str, speed_kbs: float) -> str:
-    """重命名节点备注为 GJJnodes-国家-速度 格式"""
-    country = extract_country_from_node(node_url)
-    speed_m = speed_kbs / 1024
-    new_name = f"GJJnodes-{country}-{speed_m:.1f}m"
-    
-    try:
-        if node_url.startswith('vmess://'):
-            data = json.loads(base64.b64decode(node_url.split('://')[1]).decode())
-            data['ps'] = new_name
-            encoded = base64.b64encode(json.dumps(data).encode()).decode()
-            return f"vmess://{encoded}"
-        elif node_url.startswith('vless://'):
-            parsed = urllib.parse.urlparse(node_url)
-            return f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{parsed.query}#{new_name}"
-        elif node_url.startswith('ss://'):
-            parsed = urllib.parse.urlparse(node_url)
-            return f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{parsed.query}#{new_name}"
-        elif node_url.startswith('trojan://'):
-            parsed = urllib.parse.urlparse(node_url)
-            return f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{parsed.query}#{new_name}"
-    except:
-        pass
-    
-    return node_url
 
 
 def test_node_speed(node_url: str, index: int) -> Tuple[str, Optional[float]]:
@@ -502,8 +449,7 @@ def main():
     else:
         with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
             for node_url, speed in output_results:
-                renamed_node = rename_node(node_url, speed)
-                f.write(f"{renamed_node}\n")
+                f.write(f"{node_url}\n")
         print(f"[INFO] 结果已保存到: {OUTPUT_FILE}")
     
     if output_results:
