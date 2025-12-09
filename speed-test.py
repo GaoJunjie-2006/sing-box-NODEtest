@@ -19,7 +19,7 @@ from typing import List, Tuple, Optional
 # ==================== 配置参数区域 ====================
 
 # 下载速度阈值（KB/s），低于此值的节点将被过滤
-SPEED_THRESHOLD = 150
+SPEED_THRESHOLD = 45
 
 # 测试下载地址（支持多个，会随机选择）
 TEST_URLS = [
