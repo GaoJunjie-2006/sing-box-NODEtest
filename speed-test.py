@@ -19,7 +19,7 @@ from typing import List, Tuple, Optional
 # ==================== 配置参数区域 ====================
 
 # 下载速度阈值（KB/s），低于此值的节点将被过滤
-SPEED_THRESHOLD = 130
+SPEED_THRESHOLD = 10
 
 # 测试下载地址（支持多个，会随机选择）
 TEST_URLS = [
@@ -30,7 +30,7 @@ TEST_URLS = [
 TIMEOUT = 20
 
 # 并发测试数量
-MAX_WORKERS = 200
+MAX_WORKERS = 100
 
 # sing-box 可执行文件路径
 SING_BOX_PATH = "sing-box"
@@ -63,7 +63,7 @@ DEBUG_MODE = False
 MAX_NODES = 50
 
 # 限制输出的节点数量（0 表示不限制）
-MAX_OUTPUT_NODES = 20
+MAX_OUTPUT_NODES = 10
 
 # ======================================================
 

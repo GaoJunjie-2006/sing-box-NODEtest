@@ -28,7 +28,7 @@ TEST_URL = "http://www.gstatic.com/generate_204"
 TIMEOUT = 10
 
 # 并发测试数量
-MAX_WORKERS = 200
+MAX_WORKERS = 20000
 
 # sing-box 可执行文件路径（如果在 PATH 中可直接使用 "sing-box"）
 SING_BOX_PATH = "sing-box"
