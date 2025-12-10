@@ -19,7 +19,7 @@ from typing import List, Tuple, Optional
 # ==================== 配置参数区域 ====================
 
 # 下载速度阈值（KB/s），低于此值的节点将被过滤
-SPEED_THRESHOLD = 45
+SPEED_THRESHOLD = 130
 
 # 测试下载地址（支持多个，会随机选择）
 TEST_URLS = [
@@ -48,10 +48,10 @@ BASE_PORT = 30000
 STARTUP_WAIT = 1
 
 # 速度超过此值（KB/s）就停止下载，按此值计算（节省流量）
-SPEED_CAP = 1024
+SPEED_CAP = 150
 
 # 单次下载最大字节数（防止流量过多）
-MAX_DOWNLOAD_SIZE = 2 * 1024 * 1024
+MAX_DOWNLOAD_SIZE = 5 * 1024 * 1024
 
 # 是否按速度排序输出（True 则从快到慢）
 SORT_BY_SPEED = True
