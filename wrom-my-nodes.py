@@ -65,24 +65,21 @@ def process_node_names(content):
     for line in lines:
         if not line.strip():
             continue
-            
+        
         try:
-            # 解析vmess/vless/ss等协议
-            if line.startswith('vmess://'):
-                # 解码vmess
-                data = json.loads(base64.b64decode(line[8:]).decode('utf-8'))
-                if 'ps' in data and '-' in data['ps']:
-                    data['ps'] = data['ps'].split('-')[0]
-                line = 'vmess://' + base64.b64encode(json.dumps(data).encode()).decode()
+            # 先尝试base64解码
+            decoded = base64.b64decode(line).decode('utf-8').strip()
             
-            elif line.startswith(('vless://', 'trojan://', 'ss://')):
-                # 解析URL参数中的remarks
-                if '#' in line:
-                    base_part, remark = line.rsplit('#', 1)
-                    remark = unquote(remark)
-                    if '-' in remark:
-                        remark = remark.split('-')[0]
-                    line = base_part + '#' + remark
+            # 处理解码后的节点
+            if '#' in decoded:
+                base_part, remark = decoded.rsplit('#', 1)
+                remark = unquote(remark)
+                if '-' in remark:
+                    remark = remark.split('-')[0]
+                decoded = base_part + '#' + remark
+            
+            # 重新编码
+            line = base64.b64encode(decoded.encode()).decode()
         except:
             pass
         
