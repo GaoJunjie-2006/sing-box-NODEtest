@@ -7,9 +7,11 @@
 
 import subprocess
 import requests
-import re
+import base64
+import json
 import time
 from datetime import datetime, timedelta
+from urllib.parse import urlparse, parse_qs, unquote
 
 # ==================== 配置参数区域 ====================
 
@@ -54,13 +56,39 @@ def fetch_nodes():
 
 
 def process_node_names(content):
-    """处理节点别名，去掉 -<字母> 部分"""
+    """处理节点别名，去掉 -<字母数字> 部分"""
     print(f"[{datetime.now().strftime('%H:%M:%S')}] 处理节点别名...")
     
-    # 匹配中文-字母的模式，替换为只保留中文部分
-    processed = re.sub(r'([\u4e00-\u9fff]+)-[a-zA-Z]+', r'\1', content)
+    lines = content.strip().split('\n')
+    processed_lines = []
     
-    return processed
+    for line in lines:
+        if not line.strip():
+            continue
+            
+        try:
+            # 解析vmess/vless/ss等协议
+            if line.startswith('vmess://'):
+                # 解码vmess
+                data = json.loads(base64.b64decode(line[8:]).decode('utf-8'))
+                if 'ps' in data and '-' in data['ps']:
+                    data['ps'] = data['ps'].split('-')[0]
+                line = 'vmess://' + base64.b64encode(json.dumps(data).encode()).decode()
+            
+            elif line.startswith(('vless://', 'trojan://', 'ss://')):
+                # 解析URL参数中的remarks
+                if '#' in line:
+                    base_part, remark = line.rsplit('#', 1)
+                    remark = unquote(remark)
+                    if '-' in remark:
+                        remark = remark.split('-')[0]
+                    line = base_part + '#' + remark
+        except:
+            pass
+        
+        processed_lines.append(line)
+    
+    return '\n'.join(processed_lines)
 
 
 def save_nodes(content):
