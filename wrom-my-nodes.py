@@ -42,6 +42,7 @@ def fetch_nodes():
     """爬取所有链接的节点内容"""
     print(f"[{datetime.now().strftime('%H:%M:%S')}] 开始爬取节点...")
     all_nodes = []
+    success_count = 0
     
     for url in NODE_URLS:
         try:
@@ -49,9 +50,18 @@ def fetch_nodes():
             response = requests.get(url, timeout=30)
             response.raise_for_status()
             all_nodes.append(response.text)
+            success_count += 1
+            print(f"    ✓ 成功")
+        except requests.exceptions.Timeout:
+            print(f"    ✗ 超时: 连接超过30秒")
+        except requests.exceptions.ConnectionError:
+            print(f"    ✗ 连接失败: 无法连接到服务器")
+        except requests.exceptions.HTTPError as e:
+            print(f"    ✗ HTTP错误: {e}")
         except Exception as e:
-            print(f"  [ERROR] 爬取失败 {url}: {e}")
+            print(f"    ✗ 未知错误: {e}")
     
+    print(f"  [INFO] 成功爬取 {success_count}/{len(NODE_URLS)} 个链接")
     return "\n".join(all_nodes)
 
 
@@ -61,6 +71,7 @@ def process_node_names(content):
     
     lines = content.strip().split('\n')
     processed_lines = []
+    processed_count = 0
     
     for line in lines:
         if not line.strip():
@@ -76,24 +87,34 @@ def process_node_names(content):
                 remark = unquote(remark)
                 if '-' in remark:
                     remark = remark.split('-')[0]
+                    processed_count += 1
                 decoded = base_part + '#' + remark
             
             # 重新编码
             line = base64.b64encode(decoded.encode()).decode()
-        except:
-            pass
+        except Exception as e:
+            print(f"  [WARN] 处理节点失败，保持原样: {str(e)[:50]}")
         
         processed_lines.append(line)
     
+    print(f"  ✓ 处理完成: 共 {len(processed_lines)} 个节点，修改了 {processed_count} 个别名")
     return '\n'.join(processed_lines)
 
 
 def save_nodes(content):
     """保存节点到文件"""
     print(f"[{datetime.now().strftime('%H:%M:%S')}] 保存节点到 {OUTPUT_FILE}...")
-    with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
-        f.write(content)
-    print(f"  [OK] 已保存")
+    try:
+        with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
+            f.write(content)
+        print(f"  ✓ 成功保存到 {OUTPUT_FILE}")
+        return True
+    except PermissionError:
+        print(f"  ✗ 权限错误: 无法写入文件 {OUTPUT_FILE}")
+        return False
+    except Exception as e:
+        print(f"  ✗ 保存失败: {e}")
+        return False
 
 
 def run_command(cmd):
@@ -109,35 +130,69 @@ def push_to_github():
     """推送到GitHub"""
     print(f"[{datetime.now().strftime('%H:%M:%S')}] 开始推送到GitHub...")
     
+    # 检查git是否安装
+    success, output = run_command("git --version")
+    if not success:
+        print(f"  ✗ Git未安装或不在PATH中")
+        return False
+    print(f"  ✓ Git已安装: {output}")
+    
+    # 检查是否在git仓库中
+    success, output = run_command("git rev-parse --git-dir")
+    if not success:
+        print(f"  ✗ 当前目录不是Git仓库，请先执行: git init")
+        return False
+    print(f"  ✓ Git仓库已初始化")
+    
     # 设置远程仓库
-    run_command(f"git remote set-url origin {GIT_REMOTE_URL}")
+    success, output = run_command(f"git remote set-url origin {GIT_REMOTE_URL}")
+    if not success:
+        # 如果设置失败，尝试添加
+        success, output = run_command(f"git remote add origin {GIT_REMOTE_URL}")
+        if not success:
+            print(f"  ✗ 设置远程仓库失败: {output}")
+            return False
+    print(f"  ✓ 远程仓库已设置: {GIT_REMOTE_URL}")
     
     # 添加文件
     success, output = run_command("git add .")
     if not success:
-        print(f"  [ERROR] 添加文件失败: {output}")
+        print(f"  ✗ 添加文件失败: {output}")
         return False
+    print(f"  ✓ 文件已添加到暂存区")
     
     # 检查是否有更改
     success, output = run_command("git status --porcelain")
-    if not success or not output:
-        print(f"  [INFO] 没有需要提交的更改")
+    if not success:
+        print(f"  ✗ 检查状态失败: {output}")
+        return False
+    if not output:
+        print(f"  ℹ 没有需要提交的更改")
         return True
+    print(f"  ✓ 检测到更改")
     
     # 提交
     commit_msg = f"Auto update nodes - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
     success, output = run_command(f'git commit -m "{commit_msg}"')
     if not success:
-        print(f"  [ERROR] 提交失败: {output}")
+        print(f"  ✗ 提交失败: {output}")
         return False
+    print(f"  ✓ 提交成功")
     
     # 推送
     success, output = run_command(f"git push origin {GIT_BRANCH}")
     if not success:
-        print(f"  [ERROR] 推送失败: {output}")
+        if "Permission denied" in output or "publickey" in output:
+            print(f"  ✗ SSH密钥验证失败")
+            print(f"  提示: 请确保已将SSH公钥添加到GitHub")
+            print(f"  生成密钥: ssh-keygen -t ed25519 -C 'your_email@example.com'")
+            print(f"  查看公钥: cat ~/.ssh/id_ed25519.pub")
+        elif "rejected" in output:
+            print(f"  ✗ 推送被拒绝: 远程仓库有更新，请先拉取")
+        else:
+            print(f"  ✗ 推送失败: {output}")
         return False
-    
-    print(f"  [OK] 推送成功")
+    print(f"  ✓ 推送成功到 {GIT_BRANCH} 分支")
     return True
 
 
@@ -151,23 +206,37 @@ def update_task():
         # 1. 爬取节点
         nodes_content = fetch_nodes()
         
-        if not nodes_content:
-            print("[ERROR] 未获取到任何节点内容")
+        if not nodes_content or not nodes_content.strip():
+            print("\n✗ 任务失败: 未获取到任何节点内容")
             return
         
         # 2. 处理节点名称
         processed_content = process_node_names(nodes_content)
         
+        if not processed_content:
+            print("\n✗ 任务失败: 节点处理后为空")
+            return
+        
         # 3. 保存到文件
-        save_nodes(processed_content)
+        if not save_nodes(processed_content):
+            print("\n✗ 任务失败: 无法保存文件")
+            return
         
         # 4. 推送到GitHub
-        push_to_github()
+        if not push_to_github():
+            print("\n✗ 任务失败: GitHub推送失败")
+            return
         
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] ✓ 任务完成")
+        print("\n" + "="*50)
+        print(f"✓✓✓ 任务完成 - {datetime.now().strftime('%H:%M:%S')}")
+        print("="*50)
         
+    except KeyboardInterrupt:
+        raise
     except Exception as e:
-        print(f"[ERROR] 任务执行失败: {e}")
+        print(f"\n✗ 任务执行失败: {type(e).__name__}: {e}")
+        import traceback
+        print(f"详细错误:\n{traceback.format_exc()}")
 
 
 def main():
@@ -181,6 +250,14 @@ def main():
     print(f"  - 分支: {GIT_BRANCH}")
     print(f"  - 定时: 每天 05:15")
     print("="*50)
+    
+    # 检查依赖
+    try:
+        import requests
+        print("✓ requests库已安装")
+    except ImportError:
+        print("✗ 缺少依赖: 请运行 pip install requests")
+        return
     
     # 立即执行一次
     update_task()
