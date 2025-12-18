@@ -74,31 +74,67 @@ def process_node_names(content):
     processed_count = 0
     
     for line in lines:
-        if not line.strip():
+        line = line.strip()
+        if not line:
             continue
         
         try:
-            # 先尝试base64解码
+            # 验证是否为有效的base64字符串
+            if not _is_valid_base64(line):
+                print(f"  [WARN] 跳过非base64行: {line[:30]}...")
+                processed_lines.append(line)
+                continue
+            
+            # base64解码
             decoded = base64.b64decode(line).decode('utf-8').strip()
+            
+            # 验证解码后是否包含节点信息
+            if not any(protocol in decoded for protocol in ['vmess://', 'vless://', 'trojan://', 'ss://']):
+                print(f"  [WARN] 解码后非节点格式，保持原样")
+                processed_lines.append(line)
+                continue
             
             # 处理解码后的节点
             if '#' in decoded:
-                base_part, remark = decoded.rsplit('#', 1)
-                remark = unquote(remark)
-                if '-' in remark:
-                    remark = remark.split('-')[0]
-                    processed_count += 1
-                decoded = base_part + '#' + remark
+                try:
+                    base_part, remark = decoded.rsplit('#', 1)
+                    remark = unquote(remark)
+                    # 去掉 -<字母数字> 后缀
+                    if '-' in remark and len(remark.split('-')) > 1:
+                        # 检查最后一部分是否为字母数字组合
+                        last_part = remark.split('-')[-1]
+                        if last_part.isalnum() and len(last_part) <= 10:
+                            remark = '-'.join(remark.split('-')[:-1])
+                            processed_count += 1
+                    decoded = base_part + '#' + remark
+                except ValueError as e:
+                    print(f"  [WARN] 节点名称处理失败: {e}")
             
             # 重新编码
             line = base64.b64encode(decoded.encode()).decode()
+            
+        except (base64.binascii.Error, UnicodeDecodeError) as e:
+            print(f"  [WARN] Base64解码失败，保持原样: {e}")
+        except ValueError as e:
+            print(f"  [WARN] 节点格式错误，保持原样: {e}")
         except Exception as e:
-            print(f"  [WARN] 处理节点失败，保持原样: {str(e)[:50]}")
+            print(f"  [ERROR] 处理节点时发生未知错误: {e}")
         
         processed_lines.append(line)
     
     print(f"  ✓ 处理完成: 共 {len(processed_lines)} 个节点，修改了 {processed_count} 个别名")
     return '\n'.join(processed_lines)
+
+
+def _is_valid_base64(s):
+    """检查字符串是否为有效的base64编码"""
+    try:
+        if len(s) % 4 != 0:
+            return False
+        base64.b64decode(s, validate=True)
+        return True
+    except Exception:
+        return False
 
 
 def save_nodes(content):
@@ -109,11 +145,17 @@ def save_nodes(content):
             f.write(content)
         print(f"  ✓ 成功保存到 {OUTPUT_FILE}")
         return True
-    except PermissionError:
-        print(f"  ✗ 权限错误: 无法写入文件 {OUTPUT_FILE}")
+    except PermissionError as e:
+        print(f"  ✗ 权限错误: 无法写入文件 {OUTPUT_FILE} - {e}")
         return False
-    except Exception as e:
-        print(f"  ✗ 保存失败: {e}")
+    except FileNotFoundError as e:
+        print(f"  ✗ 文件路径错误: {e}")
+        return False
+    except OSError as e:
+        print(f"  ✗ 系统错误: {e}")
+        return False
+    except UnicodeEncodeError as e:
+        print(f"  ✗ 编码错误: {e}")
         return False
 
 
@@ -173,7 +215,9 @@ def push_to_github():
     
     # 提交
     commit_msg = f"Auto update nodes - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-    success, output = run_command(f'git commit -m "{commit_msg}"')
+    # 转义提交信息中的特殊字符
+    escaped_msg = commit_msg.replace('"', '\"').replace('`', '\`').replace('$', '\$')
+    success, output = run_command(f'git commit -m "{escaped_msg}"')
     if not success:
         print(f"  ✗ 提交失败: {output}")
         return False
@@ -273,10 +317,14 @@ def main():
             if now >= next_run:
                 next_run += timedelta(days=1)
             
-            # 等待到执行时间
-            sleep_seconds = (next_run - datetime.now()).total_seconds()
-            if sleep_seconds > 0:
-                time.sleep(sleep_seconds)
+            # 等待到执行时间（重新计算避免竞态条件）
+            while datetime.now() < next_run:
+                sleep_seconds = (next_run - datetime.now()).total_seconds()
+                if sleep_seconds > 0:
+                    # 最多睡眰60秒，然后重新检查时间
+                    time.sleep(min(sleep_seconds, 60))
+                else:
+                    break
             
             # 执行任务
             update_task()
