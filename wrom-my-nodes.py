@@ -10,8 +10,12 @@ import requests
 import base64
 import json
 import time
+import logging
 from datetime import datetime, timedelta
 from urllib.parse import urlparse, parse_qs, unquote
+
+# 配置日志
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # ==================== 配置参数区域 ====================
 
@@ -49,7 +53,9 @@ def fetch_nodes():
             print(f"  - 爬取: {url}")
             response = requests.get(url, timeout=30)
             response.raise_for_status()
-            all_nodes.append(response.text)
+            # 统一换行符为Unix格式
+            content = response.text.replace('\r\n', '\n').replace('\r', '\n')
+            all_nodes.append(content)
             success_count += 1
             print(f"    ✓ 成功")
         except requests.exceptions.Timeout:
@@ -141,9 +147,18 @@ def save_nodes(content):
     """保存节点到文件"""
     print(f"[{datetime.now().strftime('%H:%M:%S')}] 保存节点到 {OUTPUT_FILE}...")
     try:
-        with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
-            f.write(content)
-        print(f"  ✓ 成功保存到 {OUTPUT_FILE}")
+        # 清理内容：统一换行符，去除空行和多余空白
+        lines = [line.strip() for line in content.replace('\r\n', '\n').replace('\r', '\n').split('\n')]
+        lines = [line for line in lines if line]  # 过滤空行
+        clean_content = '\n'.join(lines)
+        
+        # 使用Unix换行符保存（newline='\n'）
+        with open(OUTPUT_FILE, 'w', encoding='utf-8', newline='\n') as f:
+            f.write(clean_content)
+            if clean_content and not clean_content.endswith('\n'):
+                f.write('\n')  # 确保文件末尾有换行符
+        
+        print(f"  ✓ 成功保存到 {OUTPUT_FILE} (共 {len(lines)} 个节点)")
         return True
     except PermissionError as e:
         print(f"  ✗ 权限错误: 无法写入文件 {OUTPUT_FILE} - {e}")
@@ -162,9 +177,15 @@ def save_nodes(content):
 def run_command(cmd):
     """执行命令"""
     try:
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        if isinstance(cmd, str):
+            # 仅对简单命令使用shell=True
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        else:
+            # 对参数列表使用shell=False
+            result = subprocess.run(cmd, capture_output=True, text=True)
         return result.returncode == 0, result.stdout.strip() or result.stderr.strip()
-    except Exception as e:
+    except (subprocess.SubprocessError, OSError) as e:
+        logging.error(f"命令执行失败: {e}")
         return False, str(e)
 
 
@@ -317,14 +338,10 @@ def main():
             if now >= next_run:
                 next_run += timedelta(days=1)
             
-            # 等待到执行时间（重新计算避免竞态条件）
-            while datetime.now() < next_run:
-                sleep_seconds = (next_run - datetime.now()).total_seconds()
-                if sleep_seconds > 0:
-                    # 最多睡眰60秒，然后重新检查时间
-                    time.sleep(min(sleep_seconds, 60))
-                else:
-                    break
+            # 等待到执行时间
+            sleep_seconds = (next_run - datetime.now()).total_seconds()
+            if sleep_seconds > 0:
+                time.sleep(sleep_seconds)
             
             # 执行任务
             update_task()
