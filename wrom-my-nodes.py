@@ -24,6 +24,8 @@ NODE_URLS = [
     "http://72.11.152.226:2096/sub/nwecq8x8josiddi3",
     "http://72.11.152.226:2096/sub/dq8b549vs4tn94d2",
     "http://72.11.152.226:2096/sub/oitjhg0exfjlxg0m",
+    "http://72.11.152.226:2096/sub/ily5oat2lluvrqzm",
+    "http://72.11.152.226:2096/sub/utiublgscmbtmxta",
     # 在此添加更多链接...
     
 
@@ -46,7 +48,7 @@ def fetch_nodes():
     """爬取所有链接的节点内容"""
     logging.info("开始爬取节点...")
     all_nodes = []
-    success_count = 0
+    success_count = 0 
     
     for url in NODE_URLS:
         try:
